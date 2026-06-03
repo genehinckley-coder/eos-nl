@@ -147,6 +147,33 @@ function interpretSyntax(syntax) {
   return { result: "executed" };
 }
 
+// ── localStorage cache — restores display fields instantly on page reload ──
+const _CACHE_KEY = "eos-status-v1";
+const _CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+
+function loadStatusCache() {
+  try {
+    const raw = localStorage.getItem(_CACHE_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    if (Date.now() - c.ts > _CACHE_TTL_MS) return null;
+    return c;
+  } catch { return null; }
+}
+
+function saveStatusCache(prev, data) {
+  try {
+    localStorage.setItem(_CACHE_KEY, JSON.stringify({
+      ts:        Date.now(),
+      showName:  data.show_name         ?? prev?.showName,
+      cueList:   data.active_cue_list   ?? prev?.cueList,
+      activeCue: data.active_cue        ?? prev?.activeCue,
+      nextCue:   data.next_cue          ?? prev?.nextCue,
+      mode:      data.mode !== "unknown" ? data.mode : prev?.mode,
+    }));
+  } catch {}
+}
+
 // --- App ------------------------------------------------------------------
 
 function App() {
@@ -161,18 +188,21 @@ function App() {
     root.style.setProperty("--amber-line", accent.amberLine);
   }, [tweaks.accent]);
 
-  const [status, setStatus] = useState(() => ({
-    showName: tweaks.showName,
-    cueList: "47",
-    cueTotal: "120",
-    activeCue: "47",
-    nextCue: "48",
-    gm: 100,
-    mode: "Live",
-    connection: "Online",
-    clock: nowStamp(),
-    channels: seedChannels(tweaks.channelCount),
-  }));
+  const [status, setStatus] = useState(() => {
+    const c = loadStatusCache();
+    return {
+      showName:   c?.showName  ?? tweaks.showName,
+      cueList:    c?.cueList   ?? "—",
+      cueTotal:   "—",
+      activeCue:  c?.activeCue ?? "—",
+      nextCue:    c?.nextCue   ?? "—",
+      gm: 100,
+      mode:       c?.mode      ?? "unknown",
+      connection: "Offline",
+      clock: nowStamp(),
+      channels: seedChannels(tweaks.channelCount),
+    };
+  });
 
   // Keep showName/channels in sync with tweaks
   useEffect(() => {
@@ -193,30 +223,55 @@ function App() {
     return () => clearInterval(id);
   }, []);
 
+  // Poll /api/board-state for live EOS data. Fires immediately on mount,
+  // then self-schedules via setTimeout so requests never overlap.
+  // AbortController cancels any in-flight fetch on unmount.
+  useEffect(() => {
+    let timeoutId;
+    let cancelled = false;
+    const controller = new AbortController();
+
+    async function poll() {
+      try {
+        const res = await fetch("/api/board-state", { signal: controller.signal });
+        if (!res.ok) {
+          setStatus((st) => ({ ...st, connection: "Offline" }));
+          return;
+        }
+        const data = await res.json();
+        if (data.connected) saveStatusCache(loadStatusCache(), data);
+        setStatus((st) => ({
+          ...st,
+          showName:   data.show_name ?? st.showName,
+          // Update cue fields whenever connected; ?? preserves last-known value
+          // if EOS hasn't pushed that field yet. When disconnected, keep
+          // whatever was last displayed so the screen doesn't blank on dropout.
+          cueList:   data.connected ? (data.active_cue_list ?? st.cueList)  : st.cueList,
+          activeCue: data.connected ? (data.active_cue      ?? st.activeCue) : st.activeCue,
+          nextCue:   data.connected ? (data.next_cue        ?? st.nextCue)   : st.nextCue,
+          cueTotal:  "—",
+          mode:      data.mode !== "unknown" ? data.mode : st.mode,
+          connection: data.connected ? "Online" : "Offline",
+        }));
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          setStatus((st) => ({ ...st, connection: "Offline" }));
+        }
+      } finally {
+        if (!cancelled) timeoutId = setTimeout(poll, 1000);
+      }
+    }
+
+    poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, []);
+
   // History
-  const [entries, setEntries] = useState(() => {
-    // Seed with two pre-canned entries so the UI doesn't feel empty
-    return [
-      {
-        id: uid(),
-        ts: "19:24:03",
-        natural: "Bring channels 1 through 10 to full",
-        syntax: "Chan 1 Thru 10 @ Full Enter",
-        status: "ok",
-        source: "fallback",
-        result: "10 channels @ 100",
-      },
-      {
-        id: uid(),
-        ts: "19:24:41",
-        natural: "Go to cue 47",
-        syntax: "Go To Cue 47 Enter",
-        status: "ok",
-        source: "fallback",
-        result: "cue 47 active",
-      },
-    ];
-  });
+  const [entries, setEntries] = useState([]);
 
   const [busy, setBusy] = useState(false);
   const recallRef = useRef({ index: -1, snapshot: "" });

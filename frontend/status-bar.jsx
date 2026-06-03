@@ -107,12 +107,17 @@ const sbStyles = {
   dotLive: { background: "var(--green)", boxShadow: "0 0 0 3px oklch(0.78 0.13 150 / 0.18)" },
   dotBlind: { background: "var(--cool)" },
   dotAlert: { background: "var(--red)" },
+  dotNeutral: { background: "var(--ink-3)" },
 };
 
 function Pill({ tone = "live", children }) {
   const dotStyle = {
     ...sbStyles.dot,
-    ...(tone === "live" ? sbStyles.dotLive : tone === "blind" ? sbStyles.dotBlind : tone === "alert" ? sbStyles.dotAlert : {}),
+    ...(tone === "live"    ? sbStyles.dotLive
+      : tone === "blind"   ? sbStyles.dotBlind
+      : tone === "alert"   ? sbStyles.dotAlert
+      : tone === "neutral" ? sbStyles.dotNeutral
+      : {}),
   };
   return (
     <span style={sbStyles.pill}>
@@ -224,7 +229,7 @@ function StatusBar({ state }) {
       </div>
 
       <div style={sbStyles.rightCell}>
-        <Pill tone={state.mode === "Live" ? "live" : "blind"}>{state.mode}</Pill>
+        <Pill tone={state.mode === "Live" ? "live" : state.mode === "Blind" ? "blind" : "neutral"}>{state.mode}</Pill>
         <Pill tone={state.connection === "Online" ? "live" : "alert"}>{state.connection}</Pill>
         <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink-1)", letterSpacing: 0.5 }}>
           {state.clock}
