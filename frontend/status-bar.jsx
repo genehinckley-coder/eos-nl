@@ -142,7 +142,10 @@ function Metric({ label, value, sub, accent }) {
 // Live channel intensity strip — purely visual, animates subtly
 function ChannelStrip({ channels }) {
   const wrapRef = React.useRef(null);
-  const [visible, setVisible] = React.useState(channels.length);
+  // fits: how many bars fit in the container (updated by ResizeObserver on resize)
+  // visible: derived during render — no second ResizeObserver fire needed when channels arrive
+  const [fits, setFits] = React.useState(0);
+  const fitsRef = React.useRef(0);
 
   React.useEffect(() => {
     if (!wrapRef.current) return;
@@ -150,13 +153,17 @@ function ChannelStrip({ channels }) {
     const ro = new ResizeObserver(() => {
       const w = el.clientWidth;
       // each bar is 16px wide + 2px gap, padding ~32px
-      const fits = Math.max(0, Math.floor((w - 32) / 18));
-      setVisible(Math.min(channels.length, fits));
+      const next = Math.max(0, Math.floor((w - 32) / 18));
+      if (next !== fitsRef.current) {
+        fitsRef.current = next;
+        setFits(next);
+      }
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [channels.length]);
+  }, []); // runs once on mount; ResizeObserver handles subsequent resizes
 
+  const visible = Math.min(channels.length, fits);
   const shown = channels.slice(0, visible);
   const hidden = channels.length - shown.length;
 

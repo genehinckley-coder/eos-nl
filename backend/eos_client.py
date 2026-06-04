@@ -24,15 +24,17 @@ class EosUnreachableError(Exception):
 
 @dataclasses.dataclass
 class BoardState:
-    show_name:        Optional[str]   = None
-    active_cue:       Optional[str]   = None
-    active_cue_list:  Optional[str]   = None
-    active_cue_label: Optional[str]   = None
-    next_cue:         Optional[str]   = None
-    next_cue_list:    Optional[str]   = None
-    mode:             str             = "unknown"   # "Live" | "Blind" | "unknown"
-    connected:        bool            = False
-    last_updated:     Optional[float] = None        # time.time() wall-clock
+    show_name:        Optional[str]        = None
+    active_cue:       Optional[str]        = None
+    active_cue_list:  Optional[str]        = None
+    active_cue_label: Optional[str]        = None
+    next_cue:         Optional[str]        = None
+    next_cue_list:    Optional[str]        = None
+    mode:             str                  = "unknown"   # "Live" | "Blind" | "unknown"
+    connected:        bool                 = False
+    last_updated:     Optional[float]      = None        # time.time() wall-clock
+    cue_count:        Optional[int]        = None        # total cues in active cue list
+    channels:         dict[int, int]       = dataclasses.field(default_factory=dict)  # chan → 0-100
 
 
 class EosClient:
@@ -63,6 +65,7 @@ class EosClient:
             await self._close_writer()
             raise
         self.board_state = dataclasses.replace(self.board_state, connected=True)
+        await self._request_cue_count("1")
 
     async def _close_writer(self) -> None:
         if self._writer is not None:
@@ -139,6 +142,44 @@ class EosClient:
         label = " ".join(remaining).strip() or None
         return cue_list, cue_num, label
 
+    @staticmethod
+    def _parse_active_chan(text: str) -> dict[int, int]:
+        """Parse EOS /eos/out/active/chan string into {channel_id: level (0-100)}.
+
+        EOS format: "5 [75]", "1-10 [100]", "1 3 5-10 [50]"
+        Returns {} on empty or malformed input.
+        """
+        text = text.strip()
+        if not text:
+            return {}
+        m = re.search(r'\[(\d+)\]\s*$', text)
+        if not m:
+            return {}
+        level = min(100, max(0, int(m.group(1))))
+        result: dict[int, int] = {}
+        for token in text[:m.start()].split():
+            if '-' in token:
+                lo_hi = token.split('-', 1)
+                try:
+                    lo, hi = sorted((int(lo_hi[0]), int(lo_hi[1])))
+                    for c in range(lo, hi + 1):
+                        result[c] = level
+                except ValueError:
+                    pass
+            else:
+                try:
+                    result[int(token)] = level
+                except ValueError:
+                    pass
+        return result
+
+    def _schedule(self, coro) -> None:
+        """Schedule a coroutine as a background task. Safe to call from sync context."""
+        try:
+            asyncio.get_running_loop().create_task(coro)
+        except RuntimeError:
+            coro.close()  # no running loop (e.g. unit tests) — discard safely
+
     def _handle_osc_message(self, msg: OscMessage) -> None:
         addr = msg.address
         params = msg.params
@@ -151,9 +192,14 @@ class EosClient:
 
         elif addr == "/eos/out/active/cue/text" and params:
             cl, cq, label = self._parse_cue_text(str(params[0]))
+            old_list = self.board_state.active_cue_list
             self.board_state = dataclasses.replace(
-                self.board_state, active_cue_list=cl, active_cue=cq, active_cue_label=label, last_updated=now
+                self.board_state, active_cue_list=cl, active_cue=cq,
+                active_cue_label=label, last_updated=now
             )
+            # Re-query cue count when the active cue list changes
+            if cl and cl != old_list:
+                self._schedule(self._request_cue_count(cl))
 
         elif addr == "/eos/out/pending/cue/text" and params:
             cl, cq, _ = self._parse_cue_text(str(params[0]))
@@ -168,8 +214,46 @@ class EosClient:
                 self.board_state, mode=mode, last_updated=now
             )
 
+        # Selected channels + level, pushed by EOS when selection changes.
+        # Format: "5 [75]" | "1-10 [100]" | "1 3 5-10 [50]"
+        elif addr == "/eos/out/active/chan":
+            text = str(params[0]) if params else ""
+            self.board_state = dataclasses.replace(
+                self.board_state,
+                channels=self._parse_active_chan(text),
+                last_updated=now,
+            )
+
+        # Cue count response: /eos/out/get/cue/<list>/count
+        elif addr.startswith("/eos/out/get/cue/") and addr.endswith("/count") and params:
+            try:
+                self.board_state = dataclasses.replace(
+                    self.board_state, cue_count=int(params[0]), last_updated=now
+                )
+            except (ValueError, TypeError):
+                pass
+
+        # Cue list notify → re-query count for that specific list
+        # Address: /eos/out/notify/cue/<list>/list/<idx>/<count>
+        elif addr.startswith("/eos/out/notify/cue/"):
+            self.board_state = dataclasses.replace(self.board_state, last_updated=now)
+            parts = addr.split("/")
+            if len(parts) >= 6 and parts[5]:
+                self._schedule(self._request_cue_count(parts[5]))
+
         else:
             self.board_state = dataclasses.replace(self.board_state, last_updated=now)
+
+    async def _request_cue_count(self, cue_list: str) -> None:
+        """Query EOS for the total cue count in the given cue list."""
+        if not self.connected:
+            return
+        try:
+            packet = self._build_raw_packet(f"/eos/get/cue/{cue_list}/count")
+            self._writer.write(packet)
+            await self._writer.drain()
+        except Exception as exc:
+            logger.warning("Cue count request failed for list %s: %s", cue_list, exc)
 
     async def _listen_loop(self) -> None:
         logger.info("OSC receive loop started")

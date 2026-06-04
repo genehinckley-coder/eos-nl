@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 from eos_client import BoardState
 from routes.board_state import router
 
-
 # Minimal FastAPI app containing only the board-state route
 _app = FastAPI()
 _app.include_router(router)
@@ -44,6 +43,12 @@ def test_offline_fields_null():
     assert data["active_cue"]   is None
     assert data["next_cue"]     is None
     assert data["last_updated"] is None
+    assert data["cue_count"]    is None
+
+
+def test_offline_channels_empty():
+    data = _patched_get(BoardState()).json()
+    assert data["channels"] == []
 
 
 # ── online (populated BoardState) ────────────────────────────────────────────
@@ -58,6 +63,8 @@ _ONLINE_STATE = BoardState(
     mode="Live",
     connected=True,
     last_updated=1700000000.0,
+    cue_count=14,
+    channels={1: 100, 2: 75, 5: 50},
 )
 
 
@@ -97,3 +104,26 @@ def test_online_mode():
 def test_online_last_updated():
     data = _patched_get(_ONLINE_STATE).json()
     assert abs(data["last_updated"] - 1700000000.0) < 0.001
+
+
+def test_online_cue_count():
+    data = _patched_get(_ONLINE_STATE).json()
+    assert data["cue_count"] == 14
+
+
+def test_online_channels_sorted():
+    data = _patched_get(_ONLINE_STATE).json()
+    channels = data["channels"]
+    assert channels == [
+        {"id": 1, "level": 100},
+        {"id": 2, "level": 75},
+        {"id": 5, "level": 50},
+    ]
+
+
+def test_online_channels_sorted_by_id():
+    """Channels must be sorted by id regardless of dict insertion order."""
+    state = BoardState(channels={5: 50, 1: 100, 2: 75})
+    data = _patched_get(state).json()
+    ids = [c["id"] for c in data["channels"]]
+    assert ids == sorted(ids)

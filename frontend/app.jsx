@@ -6,7 +6,6 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "accent": "amber",
   "density": "comfortable",
   "showName": "Hamlet · Act II",
-  "channelCount": 32,
   "showStripChrome": true
 }/*EDITMODE-END*/;
 
@@ -25,20 +24,6 @@ function nowStamp(d = new Date()) {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 function uid() { return Math.random().toString(36).slice(2, 9); }
-
-// Build a believable initial channel set: a few hot, several mid, the rest dark
-function seedChannels(n) {
-  const arr = [];
-  for (let i = 0; i < n; i++) {
-    const id = i + 1;
-    let level = 0;
-    if (i < 4) level = 70 + Math.floor(Math.random() * 30);
-    else if (i < 12) level = 30 + Math.floor(Math.random() * 40);
-    else if (i < 18) level = Math.floor(Math.random() * 25);
-    arr.push({ id, level });
-  }
-  return arr;
-}
 
 // Tiny EOS-syntax interpreter — updates state from a translated command.
 // Returns { result: string, mutator: (state) => state }
@@ -200,20 +185,14 @@ function App() {
       mode:       c?.mode      ?? "unknown",
       connection: "Offline",
       clock: nowStamp(),
-      channels: seedChannels(tweaks.channelCount),
+      channels: [],
     };
   });
 
-  // Keep showName/channels in sync with tweaks
+  // Keep showName in sync with the Tweaks panel
   useEffect(() => {
-    setStatus((st) => ({
-      ...st,
-      showName: tweaks.showName,
-      channels: st.channels.length === tweaks.channelCount
-        ? st.channels
-        : seedChannels(tweaks.channelCount),
-    }));
-  }, [tweaks.showName, tweaks.channelCount]);
+    setStatus((st) => ({ ...st, showName: tweaks.showName }));
+  }, [tweaks.showName]);
 
   // Live clock
   useEffect(() => {
@@ -249,7 +228,10 @@ function App() {
           cueList:   data.connected ? (data.active_cue_list ?? st.cueList)  : st.cueList,
           activeCue: data.connected ? (data.active_cue      ?? st.activeCue) : st.activeCue,
           nextCue:   data.connected ? (data.next_cue        ?? st.nextCue)   : st.nextCue,
-          cueTotal:  "—",
+          cueTotal:  data.connected && data.cue_count != null ? String(data.cue_count) : st.cueTotal,
+          // Channels: update while connected (??  preserves last-known if field absent);
+          // freeze on disconnect so the strip doesn't blank on dropout.
+          channels:  data.connected ? (data.channels ?? st.channels) : st.channels,
           mode:      data.mode !== "unknown" ? data.mode : st.mode,
           connection: data.connected ? "Online" : "Offline",
         }));
@@ -403,12 +385,6 @@ function App() {
             label="Show Name"
             value={tweaks.showName}
             onChange={(v) => setTweak("showName", v)}
-          />
-          <TweakSlider
-            label="Channels"
-            value={tweaks.channelCount}
-            min={8} max={64} step={4}
-            onChange={(v) => setTweak("channelCount", v)}
           />
         </TweakSection>
       </TweaksPanel>
