@@ -39,11 +39,12 @@ def test_offline_mode_unknown():
 
 def test_offline_fields_null():
     data = _patched_get(BoardState()).json()
-    assert data["show_name"]    is None
-    assert data["active_cue"]   is None
-    assert data["next_cue"]     is None
-    assert data["last_updated"] is None
-    assert data["cue_count"]    is None
+    assert data["show_name"]      is None
+    assert data["active_cue"]     is None
+    assert data["next_cue"]       is None
+    assert data["next_cue_label"] is None
+    assert data["last_updated"]   is None
+    assert data["cue_count"]      is None
 
 
 def test_offline_channels_empty():
@@ -60,6 +61,7 @@ _ONLINE_STATE = BoardState(
     active_cue_label="Intro",
     next_cue="6",
     next_cue_list="1",
+    next_cue_label="Verse",
     mode="Live",
     connected=True,
     last_updated=1700000000.0,
@@ -92,8 +94,15 @@ def test_online_active_cue_fields():
 
 def test_online_next_cue():
     data = _patched_get(_ONLINE_STATE).json()
-    assert data["next_cue"]      == "6"
-    assert data["next_cue_list"] == "1"
+    assert data["next_cue"]       == "6"
+    assert data["next_cue_list"]  == "1"
+    assert data["next_cue_label"] == "Verse"
+
+
+def test_online_next_cue_label_null_when_absent():
+    state = BoardState(next_cue="6", next_cue_list="1")  # no label
+    data = _patched_get(state).json()
+    assert data["next_cue_label"] is None
 
 
 def test_online_mode():

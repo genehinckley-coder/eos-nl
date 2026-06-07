@@ -132,6 +132,11 @@ function interpretSyntax(syntax) {
   return { result: "executed" };
 }
 
+// Returns obj[key] when the key exists, otherwise fallback.
+// Use for optional backend fields where null means "no value" but a missing key means "not sent".
+const pick = (obj, key, fallback) =>
+  obj != null && Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : fallback;
+
 // ── localStorage cache — restores display fields instantly on page reload ──
 const _CACHE_KEY = "eos-status-v1";
 const _CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
@@ -149,12 +154,14 @@ function loadStatusCache() {
 function saveStatusCache(prev, data) {
   try {
     localStorage.setItem(_CACHE_KEY, JSON.stringify({
-      ts:        Date.now(),
-      showName:  data.show_name         ?? prev?.showName,
-      cueList:   data.active_cue_list   ?? prev?.cueList,
-      activeCue: data.active_cue        ?? prev?.activeCue,
-      nextCue:   data.next_cue          ?? prev?.nextCue,
-      mode:      data.mode !== "unknown" ? data.mode : prev?.mode,
+      ts:             Date.now(),
+      showName:       data.show_name        ?? prev?.showName,
+      cueList:        data.active_cue_list  ?? prev?.cueList,
+      activeCue:      data.active_cue       ?? prev?.activeCue,
+      activeCueLabel: pick(data, "active_cue_label", prev?.activeCueLabel ?? null),
+      nextCue:        data.next_cue         ?? prev?.nextCue,
+      nextCueLabel:   pick(data, "next_cue_label",   prev?.nextCueLabel   ?? null),
+      mode:         data.mode !== "unknown" ? data.mode : prev?.mode,
     }));
   } catch {}
 }
@@ -176,16 +183,18 @@ function App() {
   const [status, setStatus] = useState(() => {
     const c = loadStatusCache();
     return {
-      showName:   c?.showName  ?? tweaks.showName,
-      cueList:    c?.cueList   ?? "—",
-      cueTotal:   "—",
-      activeCue:  c?.activeCue ?? "—",
-      nextCue:    c?.nextCue   ?? "—",
+      showName:     c?.showName  ?? tweaks.showName,
+      cueList:      c?.cueList   ?? "—",
+      cueTotal:     "—",
+      activeCue:      c?.activeCue      ?? "—",
+      activeCueLabel: c?.activeCueLabel ?? null,
+      nextCue:        c?.nextCue        ?? "—",
+      nextCueLabel:   c?.nextCueLabel   ?? null,
       gm: 100,
-      mode:       c?.mode      ?? "unknown",
-      connection: "Offline",
-      clock: nowStamp(),
-      channels: [],
+      mode:         c?.mode      ?? "unknown",
+      connection:   "Offline",
+      clock:        nowStamp(),
+      channels:     [],
     };
   });
 
@@ -225,9 +234,11 @@ function App() {
           // Update cue fields whenever connected; ?? preserves last-known value
           // if EOS hasn't pushed that field yet. When disconnected, keep
           // whatever was last displayed so the screen doesn't blank on dropout.
-          cueList:   data.connected ? (data.active_cue_list ?? st.cueList)  : st.cueList,
-          activeCue: data.connected ? (data.active_cue      ?? st.activeCue) : st.activeCue,
-          nextCue:   data.connected ? (data.next_cue        ?? st.nextCue)   : st.nextCue,
+          cueList:      data.connected ? (data.active_cue_list  ?? st.cueList)      : st.cueList,
+          activeCue:      data.connected ? (data.active_cue        ?? st.activeCue)      : st.activeCue,
+          activeCueLabel: data.connected ? pick(data, "active_cue_label", st.activeCueLabel) : st.activeCueLabel,
+          nextCue:        data.connected ? (data.next_cue          ?? st.nextCue)        : st.nextCue,
+          nextCueLabel:   data.connected ? pick(data, "next_cue_label",   st.nextCueLabel)   : st.nextCueLabel,
           cueTotal:  data.connected && data.cue_count != null ? String(data.cue_count) : st.cueTotal,
           // Channels: update while connected (??  preserves last-known if field absent);
           // freeze on disconnect so the strip doesn't blank on dropout.

@@ -110,8 +110,16 @@ def test_handle_osc_active_cue_text():
 def test_handle_osc_pending_cue_text():
     client = EosClient()
     client._handle_osc_message(_mock_msg("/eos/out/pending/cue/text", ["1/6 Verse 5.00"]))
-    assert client.board_state.next_cue_list == "1"
-    assert client.board_state.next_cue      == "6"
+    assert client.board_state.next_cue_list  == "1"
+    assert client.board_state.next_cue       == "6"
+    assert client.board_state.next_cue_label == "Verse"
+
+
+def test_handle_osc_pending_cue_text_no_label():
+    client = EosClient()
+    client._handle_osc_message(_mock_msg("/eos/out/pending/cue/text", ["1/3 3.00"]))
+    assert client.board_state.next_cue       == "3"
+    assert client.board_state.next_cue_label is None
 
 
 def test_handle_osc_event_state_live():
@@ -271,5 +279,6 @@ def test_board_state_defaults():
     assert state.last_updated is None
     assert state.active_cue is None
     assert state.next_cue is None
+    assert state.next_cue_label is None
     assert state.cue_count is None
     assert state.channels == {}

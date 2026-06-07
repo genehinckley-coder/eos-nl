@@ -1,5 +1,7 @@
 // status-bar.jsx — top status section
 
+const subTextBase = { fontFamily: "var(--mono)", color: "var(--ink-2)" };
+
 const sbStyles = {
   bar: {
     display: "grid",
@@ -75,12 +77,8 @@ const sbStyles = {
     letterSpacing: 0.3,
   },
   metricValueAccent: { color: "var(--amber)" },
-  metricSub: {
-    fontFamily: "var(--mono)",
-    fontSize: 10,
-    color: "var(--ink-2)",
-    marginLeft: 4,
-  },
+  metricSub:     { ...subTextBase, fontSize: 10, marginLeft: 4 },
+  metricSubLine: { ...subTextBase, display: "block", fontSize: 9, marginLeft: 4 },
   rightCell: {
     display: "flex",
     alignItems: "center",
@@ -127,13 +125,14 @@ function Pill({ tone = "live", children }) {
   );
 }
 
-function Metric({ label, value, sub, accent }) {
+function Metric({ label, value, sub, subLine, accent }) {
   return (
     <div style={sbStyles.metric}>
       <div style={sbStyles.metricLabel}>{label}</div>
       <div>
         <span style={{ ...sbStyles.metricValue, ...(accent ? sbStyles.metricValueAccent : {}) }}>{value}</span>
         {sub && <span style={sbStyles.metricSub}>{sub}</span>}
+        {subLine && <span style={sbStyles.metricSubLine}>{subLine}</span>}
       </div>
     </div>
   );
@@ -229,8 +228,8 @@ function StatusBar({ state }) {
 
       <div style={sbStyles.metricsRow}>
         <Metric label="Cue List" value={`${state.cueList}`} sub={`/${state.cueTotal}`} />
-        <Metric label="Active" value={state.activeCue} accent />
-        <Metric label="Next" value={state.nextCue} />
+        <Metric label="Active" value={state.activeCue} subLine={state.activeCueLabel} accent />
+        <Metric label="Next" value={state.nextCue} subLine={state.nextCueLabel} />
         <Metric label="GM" value={`${state.gm}`} sub="%" />
         <ChannelStrip channels={state.channels} />
       </div>

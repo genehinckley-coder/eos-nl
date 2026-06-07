@@ -30,6 +30,7 @@ class BoardState:
     active_cue_label: Optional[str]        = None
     next_cue:         Optional[str]        = None
     next_cue_list:    Optional[str]        = None
+    next_cue_label:   Optional[str]        = None
     mode:             str                  = "unknown"   # "Live" | "Blind" | "unknown"
     connected:        bool                 = False
     last_updated:     Optional[float]      = None        # time.time() wall-clock
@@ -202,9 +203,9 @@ class EosClient:
                 self._schedule(self._request_cue_count(cl))
 
         elif addr == "/eos/out/pending/cue/text" and params:
-            cl, cq, _ = self._parse_cue_text(str(params[0]))
+            cl, cq, label = self._parse_cue_text(str(params[0]))
             self.board_state = dataclasses.replace(
-                self.board_state, next_cue_list=cl, next_cue=cq, last_updated=now
+                self.board_state, next_cue_list=cl, next_cue=cq, next_cue_label=label, last_updated=now
             )
 
         elif addr == "/eos/out/event/state" and params:

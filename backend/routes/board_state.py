@@ -18,6 +18,7 @@ class BoardStateResponse(BaseModel):
     active_cue_label: Optional[str]
     next_cue:         Optional[str]
     next_cue_list:    Optional[str]
+    next_cue_label:   Optional[str]
     mode:             str
     connected:        bool
     last_updated:     Optional[float]
@@ -37,6 +38,7 @@ def _to_response(bs: BoardState) -> BoardStateResponse:
         active_cue_label=bs.active_cue_label,
         next_cue=bs.next_cue,
         next_cue_list=bs.next_cue_list,
+        next_cue_label=bs.next_cue_label,
         mode=bs.mode,
         connected=bs.connected,
         last_updated=bs.last_updated,
